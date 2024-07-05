@@ -65,24 +65,28 @@ pub const String = struct {
         return self.inner.capacity;
     }
 
+    pub inline fn setCapacity(self: *String, newCap: usize) void {
+        self.inner.capacity = newCap;
+    }
+
     /// Returns the length of the string
     pub inline fn len(self: String) usize {
-        return self.inner.items.len;
+        return self.str().len;
+    }
+
+    /// Sets the length of the string
+    pub inline fn setLen(self: *String, newLen: usize) void {
+        self.inner.items = self.inner.items[0..newLen];
     }
 
     /// Allocates `bytes` space for the internal buffer
     pub fn allocate(self: *String, bytes: usize) Error!void {
-        if (self.inner.items.len > bytes) {
-            self.inner.items.len = bytes;
+        if (self.capacity() > bytes) {
+            self.setCapacity(bytes);
             return;
         } else {
-            self.inner.ensureTotalCapacity(bytes) catch return Error.OutOfMemory;
+            self.inner.ensureTotalCapacityPrecise(bytes) catch return Error.OutOfMemory;
         }
-    }
-
-    /// Allocates exactly `bytes` space for the internal buffer
-    pub fn allocatePrecise(self: *String, bytes: usize) Error!void {
-        self.inner.ensureTotalCapacityPrecise(bytes) catch return Error.OutOfMemory;
     }
 
     /// Allocates `bytes` more space for the internal buffer
@@ -116,8 +120,8 @@ pub const String = struct {
             i += size;
         }
 
-        const ret = self.inner.items[i..self.len()];
-        self.inner.items.len -= (self.inner.items.len - i);
+        const ret = self.str()[i..self.len()];
+        self.setLen(self.len() - (self.len() - i));
         return ret;
     }
 
@@ -160,6 +164,7 @@ pub const String = struct {
             const size = String.getUTF8Size(self.str()[i]);
             return self.str()[i..(i + size)];
         }
+        return null;
     }
 
     /// Returns amount of characters in the String
@@ -168,7 +173,7 @@ pub const String = struct {
         var i: usize = 0;
 
         while (i < self.len()) {
-            i += String.getUTF8Size(self.inner.items[i]);
+            i += String.getUTF8Size(self.str()[i]);
             count += 1;
         }
 
@@ -181,14 +186,16 @@ pub const String = struct {
         if (index) |i| {
             return String.getIndex(self.str(), i, false);
         }
+        return null;
     }
 
     /// Finds the last occurrence of the string literal
     pub fn rfind(self: String, literal: []const u8) ?usize {
-        const index = std.mem.lastIndexOf(u8, self.inner.items[0..self.len()], literal);
+        const index = std.mem.lastIndexOf(u8, self.str()[0..self.len()], literal);
         if (index) |i| {
             return String.getIndex(self.str(), i, false);
         }
+        return null;
     }
 
     /// Removes a character at the specified index
@@ -211,7 +218,7 @@ pub const String = struct {
             self.str()[i - difference] = self.str()[i];
         }
 
-        self.str().len -= difference;
+        self.setCapacity(self.capacity() - difference);
     }
 
     /// Trims all whitelist characters at the start of the String.
@@ -243,7 +250,7 @@ pub const String = struct {
     /// Copies this String into a new one
     /// User is responsible for managing the new String
     pub fn clone(self: String) Error!String {
-        return String.initWithContents(self.allocator, self.str());
+        return String.initWithContents(self.inner.allocator, self.str());
     }
 
     /// Reverses the characters in this String
@@ -270,7 +277,7 @@ pub const String = struct {
             }
         }
 
-        self.inner.items.len *= (n + 1);
+        self.setLen(self.len() * (n + 1));
     }
 
     /// Checks the String is empty
@@ -300,13 +307,15 @@ pub const String = struct {
         if (i >= self.len() - 1 and block == index) {
             return self.str()[start..self.len()];
         }
+
+        return null;
     }
 
     /// Splits the String into a new string, based on delimiters and an index
     /// The user of this function is in charge of the memory of the new String.
     pub fn splitToString(self: *const String, delimiters: []const u8, index: usize) Error!?String {
         if (self.split(delimiters, index)) |block| {
-            var string = String.init(self.allocator);
+            var string = String.init(self.inner.allocator);
             try string.concat(block);
             return string;
         }
@@ -322,9 +331,9 @@ pub const String = struct {
     /// Converts all (ASCII) uppercase letters to lowercase
     pub fn toLowercase(self: *String) void {
         var i: usize = 0;
-        while (i < self.len()()) {
-            const size = String.getUTF8Size(self.inner.items[i]);
-            if (size == 1) self.inner.items[i] = std.ascii.toLower(self.inner.items[i]);
+        while (i < self.len()) {
+            const size = String.getUTF8Size(self.str()[i]);
+            if (size == 1) self.str()[i] = std.ascii.toLower(self.str()[i]);
             i += size;
         }
     }
@@ -332,9 +341,9 @@ pub const String = struct {
     /// Converts all (ASCII) uppercase letters to lowercase
     pub fn toUppercase(self: *String) void {
         var i: usize = 0;
-        while (i < self.len()()) {
-            const size = String.getUTF8Size(self.inner.items[i]);
-            if (size == 1) self.inner.items[i] = std.ascii.toUpper(self.inner.items[i]);
+        while (i < self.len()) {
+            const size = String.getUTF8Size(self.str()[i]);
+            if (size == 1) self.str()[i] = std.ascii.toUpper(self.str()[i]);
             i += size;
         }
     }
@@ -342,7 +351,7 @@ pub const String = struct {
     /// Creates a String from a given range
     /// User is responsible for managing the new String
     pub fn substr(self: String, start: usize, end: usize) Error!String {
-        var result = String.init(self.allocator);
+        var result = String.init(self.inner.allocator);
 
         if (String.getIndex(self.str(), start, true)) |rStart| {
             if (String.getIndex(self.str(), end, true)) |rEnd| {
@@ -376,10 +385,10 @@ pub const String = struct {
             index: usize,
 
             pub fn next(it: *StringIterator) ?[]const u8 {
-                if (it.index == it.string.size) return null;
+                if (it.index == it.string.len()) return null;
                 const i = it.index;
-                it.index += String.getUTF8Size(it.string.inner.items[i]);
-                return it.string.inner.items[i..it.index];
+                it.index += String.getUTF8Size(it.string.str()[i]);
+                return it.string.str()[i..it.index];
             }
         };
 
@@ -438,23 +447,29 @@ pub const String = struct {
 
     /// Checks the start of the string against a literal
     pub fn startsWith(self: *String, literal: []const u8) bool {
-        return std.mem.startsWith(u8, self.inner.items, literal);
+        return std.mem.startsWith(u8, self.str(), literal);
     }
 
     /// Checks the end of the string against a literal
     pub fn endsWith(self: *String, literal: []const u8) bool {
-        return std.mem.endsWith(u8, self.inner.items, literal);
+        return std.mem.endsWith(u8, self.str(), literal);
     }
 
     /// Replaces all occurrences of a string literal with another
+    /// FIXME: this function panics, look at old impl to figure out how to fix
     pub fn replace(self: *String, needle: []const u8, replacement: []const u8) !bool {
+        // An empty needle results in a panic
+        if (needle.len == 0) {
+            return false;
+        }
+
         const InputSize = self.len();
         const size = std.mem.replacementSize(u8, self.str()[0..InputSize], needle, replacement);
-        self.inner.items = self.allocator.alloc(u8, size) catch {
+        self.inner.items = self.inner.allocator.alloc(u8, size) catch {
             return Error.OutOfMemory;
         };
-        self.inner.items.len = size;
-        const changes = std.mem.replace(u8, self.str()[0..InputSize], needle, replacement, self.self.str());
+        const changes = std.mem.replace(u8, self.str()[0..size], needle, replacement, self.str());
+        self.setCapacity(size);
         if (changes > 0) {
             return true;
         }

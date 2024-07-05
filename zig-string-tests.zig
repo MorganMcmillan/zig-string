@@ -1,10 +1,18 @@
 const std = @import("std");
-const ArenaAllocator = std.heap.ArenaAllocator;
 const eql = std.mem.eql;
 const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 
 const zig_string = @import("./zig-string.zig");
 const String = zig_string.String;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
+fn expectStrEqual(expected: []const u8, actual: []const u8) !void {
+    if (!std.mem.eql(u8, expected, actual)) {
+        std.debug.print("expected \"{s}\", got \"{s}\"", .{ expected, actual });
+        return error.TestUnexpectedResult;
+    }
+}
 
 test "Basic Usage" {
     // Use your favorite allocator
@@ -21,7 +29,7 @@ test "Basic Usage" {
     try myString.concat(", World 🔥");
 
     // Success!
-    try expect(myString.cmp("🔥 Hello, World 🔥"));
+    try expectStrEqual(myString.str(), "🔥 Hello, World 🔥");
 }
 
 test "String Tests" {
@@ -36,13 +44,13 @@ test "String Tests" {
 
     // allocate & capacity
     try myStr.allocate(16);
-    try expect(myStr.capacity() == 16);
-    try expect(myStr.size == 0);
+    try expectEqual(myStr.capacity(), 16);
+    try expectEqual(myStr.len(), 0);
 
     // truncate
     try myStr.truncate();
-    try expect(myStr.capacity() == myStr.size);
-    try expect(myStr.capacity() == 0);
+    try expectEqual(myStr.capacity(), myStr.len());
+    try expectEqual(myStr.capacity(), 0);
 
     // concat
     try myStr.concat("A");
@@ -50,14 +58,15 @@ test "String Tests" {
     try myStr.concat("💯");
     try myStr.concat("Hello🔥");
 
-    try expect(myStr.size == 17);
+    try expectEqual(myStr.len(), 17);
 
     // pop & length
-    try expect(myStr.len() == 9);
+    try expectEqual(myStr.char_count(), 9);
     try expect(eql(u8, myStr.pop().?, "🔥"));
-    try expect(myStr.len() == 8);
+    try expectEqual(myStr.char_count(), 8);
     try expect(eql(u8, myStr.pop().?, "o"));
-    try expect(myStr.len() == 7);
+    try expectEqual(myStr.char_count(), 7);
+    try expectStrEqual(myStr.str(), "A\u{5360}💯Hell");
 
     // str & cmp
     try expect(myStr.cmp("A\u{5360}💯Hell"));
@@ -71,15 +80,16 @@ test "String Tests" {
     // insert
     try myStr.insert("🔥", 1);
     try expect(eql(u8, myStr.charAt(1).?, "🔥"));
-    try expect(myStr.cmp("A🔥\u{5360}💯Hell"));
+    try expectStrEqual(myStr.str(), "A🔥\u{5360}💯Hell");
 
     // find
-    try expect(myStr.find("🔥").? == 1);
-    try expect(myStr.find("💯").? == 3);
-    try expect(myStr.find("Hell").? == 4);
+    try expectEqual(myStr.find("🔥").?, 1);
+    try expectEqual(myStr.find("💯").?, 3);
+    try expectEqual(myStr.find("Hell").?, 4);
 
     // remove & removeRange
     try myStr.removeRange(0, 3);
+    try expectStrEqual(myStr.str(), "💯Hell");
     try expect(myStr.cmp("💯Hell"));
     try myStr.remove(myStr.len() - 1);
     try expect(myStr.cmp("💯Hel"));
@@ -149,13 +159,13 @@ test "String Tests" {
 
     // clear
     myStr.clear();
-    try expect(myStr.len() == 0);
-    try expect(myStr.size == 0);
+    try expectEqual(myStr.len(), 0);
+    try expectEqual(myStr.len(), 0);
 
     // writer
     const writer = myStr.writer();
     const length = try writer.write("This is a Test!");
-    try expect(length == 15);
+    try expectEqual(length, 15);
 
     // owned
     const mySlice = try myStr.toOwned();
@@ -172,7 +182,7 @@ test "String Tests" {
         i += 1;
     }
 
-    try expect(i == myStr.len());
+    try expectEqual(i, myStr.len());
 
     // setStr
     const contents = "setStr Test!";
@@ -180,7 +190,7 @@ test "String Tests" {
     try expect(myStr.cmp(contents));
 
     // non ascii supports in windows
-    // try expect(std.os.windows.kernel32.GetConsoleOutputCP() == 65001);
+    // try expectEqual(std.os.windows.kernel32.GetConsoleOutputCP(), 65001);
 }
 
 test "init with contents" {
@@ -192,7 +202,7 @@ test "init with contents" {
     const initial_contents = "String with initial contents!";
 
     // This is how we create the String with contents at the start
-    var myStr = try String.init_with_contents(arena.allocator(), initial_contents);
+    var myStr = try String.initWithContents(arena.allocator(), initial_contents);
     try expect(eql(u8, myStr.str(), initial_contents));
 }
 
@@ -251,8 +261,8 @@ test "rfind Tests" {
     var arena = ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    var myString = try String.init_with_contents(arena.allocator(), "💯hi💯💯hi💯💯hi💯");
+    var myString = try String.initWithContents(arena.allocator(), "💯hi💯💯hi💯💯hi💯");
     defer myString.deinit();
 
-    try expect(myString.rfind("hi") == 9);
+    try expectEqual(myString.rfind("hi"), 9);
 }
